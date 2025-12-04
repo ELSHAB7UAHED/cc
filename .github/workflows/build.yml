@@ -1,0 +1,121 @@
+name: Build CS Aimbot Executable
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:  # تشغيل يدوي
+    inputs:
+      version:
+        description: 'Version number'
+        required: true
+        default: '2.0.0'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        architecture: 'x64'
+    
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller==5.13.0
+        
+        # تثبيت UPX للضغط
+        choco install upx -y
+    
+    - name: Create Version File
+      run: |
+        $version = "${{ github.ref_name }}"
+        if ($version -eq "refs/heads/main") { $version = "2.0.0" }
+        $version = $version -replace '^v', ''
+        
+        $versionInfo = @"
+# -*- coding: utf-8 -*-
+version_info = ('$version',)
+"@
+        
+        Set-Content -Path "version.py" -Value $versionInfo
+    
+    - name: Build Executable
+      run: |
+        python builder.py
+        
+        # توقيع الملف افتراضياً
+        echo "Creating fake signature for testing..."
+        echo "For real signing, add your certificate" > dist/signature.txt
+    
+    - name: Create Release Assets
+      run: |
+        # ضغط الملفات
+        Compress-Archive -Path "dist/*" -DestinationPath "CS_Aimbot_${{ github.ref_name }}.zip" -Force
+        
+        # إنشاء ملف معلومات
+        @"
+        🚀 CS Aimbot Elite - Build ${{ github.ref_name }}
+        📅 Build Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+        🔧 Compiled with GitHub Actions
+        🔒 SHA256: $(Get-FileHash "dist/CS_Aimbot_Elite.exe" -Algorithm SHA256).Hash
+        📦 Size: $([math]::Round((Get-Item "dist/CS_Aimbot_Elite.exe").Length/1MB, 2)) MB
+        
+        ⚠️ Disclaimer:
+        This tool is for EDUCATIONAL PURPOSES ONLY.
+        Do NOT use in official game servers.
+        "@ | Out-File -FilePath "BUILD_INFO.txt"
+    
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: CS_Aimbot_Executable
+        path: |
+          dist/
+          CS_Aimbot_${{ github.ref_name }}.zip
+          BUILD_INFO.txt
+    
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/CS_Aimbot_Elite.exe
+          CS_Aimbot_${{ github.ref_name }}.zip
+          BUILD_INFO.txt
+        body: |
+          🎮 CS Aimbot Elite - Version ${{ github.ref_name }}
+          
+          ### 🚀 New Features:
+          - Advanced enemy detection
+          - Smooth aiming system
+          - Auto-trigger bot
+          - Configurable hotkeys
+          
+          ### ⚙️ Installation:
+          1. Download the .exe file
+          2. Run as Administrator
+          3. Press F2 to activate
+          4. Press F10 to stop
+          
+          ### ⚠️ Important:
+          **FOR EDUCATIONAL USE ONLY**
+          
+          ### 🔧 Technical Details:
+          - Built with Python 3.10
+          - Compiled using PyInstaller
+          - UPX compressed
+          
+          ### 📊 Hashes:
+          ```
+          SHA256: ${{ steps.hash.outputs.sha256 }}
+          ```
